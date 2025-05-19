@@ -17,6 +17,7 @@ from matcher.GFSAM import build_model
 
 import random
 random.seed(0)
+from time import time
 
 
 def test(GFSAM, dataloader, args=None):
@@ -26,14 +27,14 @@ def test(GFSAM, dataloader, args=None):
     # Follow HSNet
     utils.fix_randseed(0)
     average_meter = AverageMeter(dataloader.dataset)
-
+    tot_l = 0
     for idx, batch in enumerate(dataloader):
 
         batch = utils.to_cuda(batch)
         query_img, query_mask, support_imgs, support_masks = \
             batch['query_img'], batch['query_mask'], \
             batch['support_imgs'], batch['support_masks']
-
+        s = time()
         # 1. GFSAM prepare references and target
         GFSAM.set_reference(support_imgs, support_masks)
         GFSAM.set_target(query_img)
@@ -44,9 +45,13 @@ def test(GFSAM, dataloader, args=None):
         except:
             pred_mask = old_pred_mask
         old_pred_mask = pred_mask.clone()
-        #pred_mask, _ = GFSAM.predict()
         GFSAM.clear()
-
+        l = time() - s                                                                                                                                                  
+        tot_l += l                                                                                                                                                      
+        if idx % 50 == 0 and idx > 0:                                                                                                                                   
+            cur_avg_l = tot_l / (idx*2)                                                 
+            cur_fps = 1 / cur_avg_l                                                 
+            print(f'[!!] runn. avg. FPS: {cur_fps:.2f} [!!]')
         assert pred_mask.size() == batch['query_mask'].size(), \
             'pred {} ori {}'.format(pred_mask.size(), batch['query_mask'].size())
 

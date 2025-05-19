@@ -9,7 +9,7 @@ inference_test_output
 *.jpg
 
 # compilation and distribution
-__pycache__
+**/__pycache__/
 _ext
 *.pyc
 *.pyd
