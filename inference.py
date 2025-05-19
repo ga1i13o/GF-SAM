@@ -40,11 +40,13 @@ def test(GFSAM, dataloader, args=None):
         GFSAM.set_target(query_img)
 
         # 2. Predict mask of target
-        try:
-            pred_mask, _ = GFSAM.predict()
-        except:
-            pred_mask = old_pred_mask
-        old_pred_mask = pred_mask.clone()
+        pred_mask, _ = GFSAM.predict()
+
+        # try:
+        #     pred_mask, _ = GFSAM.predict()
+        # except:
+        #     pred_mask = old_pred_mask
+        # old_pred_mask = pred_mask.clone()
         GFSAM.clear()
         l = time() - s                                                                                                                                                  
         tot_l += l                                                                                                                                                      

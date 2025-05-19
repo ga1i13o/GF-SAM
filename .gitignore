@@ -19,6 +19,7 @@ _ext
 build/
 dist/
 wheels/
+pretrain
 
 # pytorch/python/numpy formats
 *.pth

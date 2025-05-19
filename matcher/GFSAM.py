@@ -287,13 +287,20 @@ class GFSAM:
             in_points = torch.as_tensor(points, device=self.device, dtype=torch.int)
             in_labels = torch.as_tensor(labels, device=self.device, dtype=torch.int)
 
-            tar_masks, scores, logits, _ = self.predictor.predict_torch(
-                point_coords=in_points[:, None, :],
-                point_labels=in_labels[:, None],
-                # mask_input=mask_inputs,
-                features=tar_feats,
-                multimask_output=False, 
+            tar_masks, _, _ = self.predictor.predict_torch(
+                in_points[:, None, :],
+                in_labels[:, None],
+                multimask_output=False,
+                return_logits=True,
             )
+
+            # tar_masks, scores, logits, _ = self.predictor.predict_torch(
+            #     point_coords=in_points[:, None, :],
+            #     point_labels=in_labels[:, None],
+            #     # mask_input=mask_inputs,
+            #     features=tar_feats,
+            #     multimask_output=False, 
+            # )
             tar_masks = tar_masks > self.predictor.model.mask_threshold
             tar_masks_list.append(tar_masks)
         return tar_masks_list
@@ -385,9 +392,12 @@ def build_model(args):
     dinov2.to(device=args.device)
 
     # SAM
-    sam = sam_model_registry[args.sam_size](checkpoint=args.sam_weights)
+    from sam2.multimodalSAM2 import build_sam2
+    sam = build_sam2(args)
     sam.to(device=args.device)
+
     predictor = SamPredictor(sam)
+
 
     return GFSAM(
         encoder=dinov2,
