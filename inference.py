@@ -36,19 +36,22 @@ def test(GFSAM, dataloader, args=None):
             batch['support_imgs'], batch['support_masks']
         s = time()
         # 1. GFSAM prepare references and target
-        GFSAM.set_reference(support_imgs, support_masks)
+        #GFSAM.set_reference(support_imgs, support_masks)
         GFSAM.set_target(query_img)
 
         # 2. Predict mask of target
+        class_index = batch['class_id'].item()
+        #pred_mask = GFSAM.predict(class_index)
+
         try:
-            pred_mask, _ = GFSAM.predict()
+            pred_mask = GFSAM.predict(class_index)
         except:
             pred_mask = old_pred_mask
         old_pred_mask = pred_mask.clone()
         GFSAM.clear()
         l = time() - s                                                                                                                                                  
         tot_l += l                                                                                                                                                      
-        if idx % 50 == 0 and idx > 0:                                                                                                                                   
+        if idx % 200 == 0 and idx > 0:                                                                                                                                   
             cur_avg_l = tot_l / (idx*2)                                                 
             cur_fps = 1 / cur_avg_l                                                 
             print(f'[!!] runn. avg. FPS: {cur_fps:.2f} [!!]')
@@ -120,10 +123,14 @@ if __name__ == '__main__':
 
     # Dataset initialization
     FSSDataset.initialize(img_size=args.img_size, datapath=args.datapath, use_original_imgsize=args.use_original_imgsize)
-    dataloader_test = FSSDataset.build_dataloader(args.benchmark, args.bsz, args.nworker, args.fold, 'test', args.nshot)
-
+    dataloader_test, dataset = FSSDataset.build_dataloader(args.benchmark, args.bsz, args.nworker, args.fold, 'test', args.nshot)
+    dataset.sample_annotated_refs()
     # Test GFSAM
+    s_time = time()
     with torch.no_grad():
+        GFSAM.set_references_fix(dataset)
         test_miou, test_fb_iou = test(GFSAM, dataloader_test, args=args)
+    tot_time = time() - s_time
     Logger.info('Fold %d mIoU: %5.2f \t FB-IoU: %5.2f' % (args.fold, test_miou.item(), test_fb_iou.item()))
     Logger.info('==================== Finished Testing ====================')
+    Logger.info(f'Total time: {tot_time/60:.1f} minutes to annotate {len(dataset)} images')

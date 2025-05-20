@@ -61,6 +61,32 @@ class GFSAM:
 
         self.device = device
         
+    def set_references_fix(self, dataset):
+        self.class_references, self.feat_refs = {}, {}
+        def reference_masks_verification(masks):
+            if masks.sum() == 0:
+                _, _, sh, sw = masks.shape
+                masks[..., (sh // 2 - 7):(sh // 2 + 7), (sw // 2 - 7):(sw // 2 + 7)] = 1
+            return masks
+
+        for ci in dataset.class_ids:
+            query_name, support_img, support_mask = dataset.sampled_refs[ci]
+            # imgs = support_img.flatten(0, 1)  # bs, 3, h, w
+            imgs = support_img[None]
+            # process reference masks
+            masks = reference_masks_verification(support_mask)
+            masks = masks.permute(1, 0, 2, 3)  # ns, 1, h, w
+            nshot = masks.shape[0]
+            self.class_references[ci] = (imgs, nshot, masks)
+            # self.ref_imgs = imgs
+            # self.nshot = nshot
+            # self.ref_masks = masks
+        for ci in dataset.class_ids:
+            ref_imgs = torch.cat([self.encoder_transform(rimg)[None, ...] for rimg in self.class_references[ci][0]], dim=0)
+            ref_feats = self.encoder.forward_features(ref_imgs.to(self.device))["x_prenorm"][:, 1:]
+            ref_feats = F.normalize(ref_feats, dim=1, p=2) # normalize for cosine similarity
+            self.feat_refs[ci] = ref_feats
+            
     def set_reference(self, imgs, masks):
 
         def reference_masks_verification(masks):
@@ -92,14 +118,16 @@ class GFSAM:
         self.tar_img = img
         self.tar_img_np = img_np
 
-    def predict(self):
+    def predict(self, class_index):
 
         tar_feats = self.extract_sam_feats()
-        ref_feats_sem, tar_feats_sem = self.extract_img_feats()
-
+        # ref_feats_sem, tar_feats_sem = self.extract_img_feats()
+        tar_feats_sem = self.extract_img_feats()
+        ref_feats_sem = self.feat_refs[class_index]
+        ref_masks = self.class_references[class_index][2].cuda()
         # positive and negative similarity maps
-        neg_sim_map, neg_mean_sim_map = self.generate_prior(tar_feats_sem, ref_feats_sem, 1-self.ref_masks)
-        sim_map, mean_sim_map = self.generate_prior(tar_feats_sem, ref_feats_sem, self.ref_masks)
+        neg_sim_map, neg_mean_sim_map = self.generate_prior(tar_feats_sem, ref_feats_sem, 1-ref_masks)
+        sim_map, mean_sim_map = self.generate_prior(tar_feats_sem, ref_feats_sem, ref_masks)
 
         # mid-value of similarity map
         mean_sim_map_half = (mean_sim_map.max() + mean_sim_map.min()) / 2
@@ -131,7 +159,7 @@ class GFSAM:
 
             pred_masks, prob_masks = self.triplet_selection_b(tar_masks, labels_weak, selected_points, mean_sim_map, coord_f, cls_scores)
 
-        return pred_masks, (coord_xy, selected_points)
+        return pred_masks#, (coord_xy, selected_points)
     
     def triplet_selection_b(self, tar_masks, cluster_labels, coord_se_labels, mean_sim_map, coord_f, cls_scores):
         """Select and merge the masks"""
@@ -345,16 +373,16 @@ class GFSAM:
     
     def extract_img_feats(self):
 
-        ref_imgs = torch.cat([self.encoder_transform(rimg)[None, ...] for rimg in self.ref_imgs], dim=0)
+        # ref_imgs = torch.cat([self.encoder_transform(rimg)[None, ...] for rimg in self.ref_imgs], dim=0)
         tar_img = torch.cat([self.encoder_transform(timg)[None, ...] for timg in self.tar_img], dim=0)
 
-        ref_feats = self.encoder.forward_features(ref_imgs.to(self.device))["x_prenorm"][:, 1:]
+        # ref_feats = self.encoder.forward_features(ref_imgs.to(self.device))["x_prenorm"][:, 1:]
         tar_feat = self.encoder.forward_features(tar_img.to(self.device))["x_prenorm"][:, 1:]
 
-        ref_feats = F.normalize(ref_feats, dim=1, p=2) # normalize for cosine similarity
+        # ref_feats = F.normalize(ref_feats, dim=1, p=2) # normalize for cosine similarity
         tar_feat = F.normalize(tar_feat, dim=1, p=2)
 
-        return ref_feats, tar_feat
+        return tar_feat
     
     def clear(self):
 
