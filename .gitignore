@@ -17,6 +17,7 @@ _ext
 *.dll
 *.egg-info/
 build/
+ign*
 dist/
 wheels/
 pretrain
