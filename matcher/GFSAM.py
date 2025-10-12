@@ -40,9 +40,8 @@ class GFSAM:
             input_size = (input_size, input_size)
         self.input_size = input_size
 
-        img_size = 518
+        img_size = 512
         feat_size = img_size // self.encoder.patch_size
-
         self.encoder_img_size = img_size
         self.encoder_feat_size = feat_size
 
@@ -348,8 +347,8 @@ class GFSAM:
         ref_imgs = torch.cat([self.encoder_transform(rimg)[None, ...] for rimg in self.ref_imgs], dim=0)
         tar_img = torch.cat([self.encoder_transform(timg)[None, ...] for timg in self.tar_img], dim=0)
 
-        ref_feats = self.encoder.forward_features(ref_imgs.to(self.device))["x_prenorm"][:, 1:]
-        tar_feat = self.encoder.forward_features(tar_img.to(self.device))["x_prenorm"][:, 1:]
+        ref_feats = self.encoder.forward_features(ref_imgs.to(self.device))["x_prenorm"][:, 5:]
+        tar_feat = self.encoder.forward_features(tar_img.to(self.device))["x_prenorm"][:, 5:]
 
         ref_feats = F.normalize(ref_feats, dim=1, p=2) # normalize for cosine similarity
         tar_feat = F.normalize(tar_feat, dim=1, p=2)
@@ -368,19 +367,23 @@ class GFSAM:
 def build_model(args):
 
     # DINOv2, Image Encoder
-    dinov2_kwargs = dict(
-        img_size=518,
-        patch_size=14,
-        init_values=1e-5,
-        ffn_layer='mlp',
-        block_chunks=0,
-        qkv_bias=True,
-        proj_bias=True,
-        ffn_bias=True,
-    )
-    dinov2 = vits.__dict__[args.dinov2_size](**dinov2_kwargs)
+    # dinov2_kwargs = dict(
+    #     img_size=518,
+    #     patch_size=14,
+    #     init_values=1e-5,
+    #     ffn_layer='mlp',
+    #     block_chunks=0,
+    #     qkv_bias=True,
+    #     proj_bias=True,
+    #     ffn_bias=True,
+    # )
+    # dinov2 = vits.__dict__[args.dinov2_size](**dinov2_kwargs)
+    REPO_DIR = '/home/gtrivigno/dinov3'
 
-    dinov2_utils.load_pretrained_weights(dinov2, args.dinov2_weights, "teacher")
+    # DINOv3 ViT models pretrained on web images
+    dinov2 = torch.hub.load(REPO_DIR, 'dinov3_vitl16', source='local', weights='/home/gtrivigno/sam2_multi/pretrain/dinov3_vitl16_pretrain_lvd1689m-8aa4cbdd.pth')
+
+    # dinov2_utils.load_pretrained_weights(dinov2, args.dinov2_weights, "teacher")
     dinov2.eval()
     dinov2.to(device=args.device)
 
