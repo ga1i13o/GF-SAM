@@ -23,6 +23,7 @@ from segment_anything.utils.amg import (
 
 from scipy.sparse import csgraph
 
+normalize_image_transform = transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
 
 class GFSAM:
     def __init__(
@@ -31,6 +32,7 @@ class GFSAM:
             generator=None,
             input_size=1024,
             device=torch.device("cuda:0" if torch.cuda.is_available() else "cpu"),
+            subtract_empty=False,
     ):
         # models
         self.encoder = encoder
@@ -40,7 +42,8 @@ class GFSAM:
             input_size = (input_size, input_size)
         self.input_size = input_size
 
-        img_size = 512
+        self.dino_size = 840
+        img_size = self.dino_size
         feat_size = img_size // self.encoder.patch_size
         self.encoder_img_size = img_size
         self.encoder_feat_size = feat_size
@@ -59,7 +62,49 @@ class GFSAM:
         self.nshot = None
 
         self.device = device
-        
+        self.empty_feats = None
+        self.subtract_empty = subtract_empty
+        if self.subtract_empty:
+            self.empty_feats = self.compute_template(device, self.dino_size)
+            self.noise_basis = self.build_noise_basis(self.empty_feats, 140, center=True)
+    
+    @staticmethod
+    def build_noise_basis(empty_feats: torch.Tensor, n_components: int, center: bool = True):
+        """
+        empty_feats: [1, C, H, W] or [C, H, W]
+        Returns U_k: [C, k] (orthonormal), where k = min(n_components, rank)
+        """
+        if empty_feats.dim() == 4 and empty_feats.size(0) == 1:
+            empty_feats = empty_feats[0]  # [C, H, W]
+        assert empty_feats.dim() == 3, "empty_feats must be [1,C,H,W] or [C,H,W]"
+        C, H, W = empty_feats.shape
+        E = empty_feats.reshape(C, H * W)  # [C, HW]
+
+        # Optional centering across spatial positions (often helps isolate spatial bias)
+        if center:
+            E = E - E.mean(dim=1, keepdim=True)
+
+        # SVD over [C x HW] -> U: [C x r], S: [r], Vh: [r x HW], with r = min(C, HW)
+        U, S, Vh = torch.linalg.svd(E, full_matrices=False)  # U has orthonormal columns
+        #k = max(0, min(n_components, U.shape[1]))
+        if n_components > 1:
+            k = n_components
+        else:
+            cum_var = torch.cumsum(S**2, dim=0) / (S**2).sum()
+            k = torch.nonzero(cum_var >= n_components, as_tuple=False)[0].item() + 1
+
+        if k == 0:
+            # Return a valid "empty" basis to simplify downstream code.
+            return U[:, :0]  # [C, 0]
+        return U[:, :k].contiguous()  # [C, k]
+
+    @torch.no_grad()
+    def compute_template(self, device, image_size):
+        black_im = normalize_image_transform(torch.zeros(1, 3, image_size, image_size)).to(device)
+        empty_fmaps = self.encoder.to(device).get_intermediate_layers(black_im, n=1, reshape=True)[0]
+        empty_fmaps_norm = F.normalize(empty_fmaps, p=2, dim=1)
+        return empty_fmaps_norm         
+
     def set_reference(self, imgs, masks):
 
         def reference_masks_verification(masks):
@@ -341,7 +386,37 @@ class GFSAM:
         tar_feats = self.predictor.features # 1, c, h, w
 
         return tar_feats
-    
+
+    def remove_spatial_svd(self, fmaps_norm, eps: float=1e-6):
+        """
+        fmaps_norm: [B, T, C, H, W]
+        empty_feats: [1, C, H, W] or [C, H, W]
+        Returns debiased features [B, T, C, H, W] with top-k noise components removed.
+        """
+        B, T, C, H, W = fmaps_norm.shape
+        N = H * W
+        X = fmaps_norm.reshape(B * T, C, N)  # [BT, C, HW]
+        # U_k: [C, k] from build_noise_basis()
+        # nc = int(self.svd_r) if self.svd_r > 1 else self.svd_r
+        # U_k = self.build_noise_basis(empty_feats, n_components=self.svd_r, center=True)
+        U_k = self.noise_basis
+        if U_k.numel() == 0:
+            X_res = X
+        else:
+            # Projection matrix (I - U U^T) along the channel dimension
+            I = torch.eye(C, device=X.device, dtype=X.dtype)
+            P_perp = I - U_k @ U_k.transpose(0, 1)  # [C, C]
+
+            # Apply to every [C x HW] slice
+            X_res = torch.matmul(P_perp.unsqueeze(0), X)  # [BT, C, HW]
+
+        X_res = X_res.reshape(B, T, C, H, W)
+
+        # Match your original behavior: L2-normalize along channel dim
+        X_res = F.normalize(X_res, p=2, dim=2, eps=eps)
+
+        return X_res
+
     def extract_img_feats(self):
 
         ref_imgs = torch.cat([self.encoder_transform(rimg)[None, ...] for rimg in self.ref_imgs], dim=0)
@@ -350,9 +425,21 @@ class GFSAM:
         ref_feats = self.encoder.forward_features(ref_imgs.to(self.device))["x_prenorm"][:, 5:]
         tar_feat = self.encoder.forward_features(tar_img.to(self.device))["x_prenorm"][:, 5:]
 
-        ref_feats = F.normalize(ref_feats, dim=1, p=2) # normalize for cosine similarity
-        tar_feat = F.normalize(tar_feat, dim=1, p=2)
+        ref_feats = F.normalize(ref_feats, dim=-1, p=2) # normalize for cosine similarity
+        tar_feat = F.normalize(tar_feat, dim=-1, p=2)
 
+        if self.subtract_empty:
+            C, N = ref_feats.shape[-2:]
+            H = int(np.sqrt(N))
+            import einops
+            ref_square = einops.rearrange(ref_feats, '(b t) c (h w) -> b t c h w', h=H, t=1)
+            tar_square = einops.rearrange(tar_feat, '(b t) c (h w) -> b t c h w', h=H, t=1)
+            
+            ref_feats_db = self.remove_spatial_svd(ref_square)
+            tar_feat_db = self.remove_spatial_svd(tar_square)
+
+            ref_feats = einops.rearrange(ref_feats_db, 'b t c h w -> (b t) c (h w)')
+            tar_feat = einops.rearrange(tar_feat_db, 'b t c h w -> (b t) c (h w)')
         return ref_feats, tar_feat
     
     def clear(self):
@@ -395,5 +482,6 @@ def build_model(args):
     return GFSAM(
         encoder=dinov2,
         generator=predictor,
-        device=args.device
+        device=args.device,
+        subtract_empty=args.subtract_empty,
     )

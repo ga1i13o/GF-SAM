@@ -42,10 +42,12 @@ def test(GFSAM, dataloader, args=None):
         GFSAM.set_target(query_img)
 
         # 2. Predict mask of target
-        try:
-            pred_mask, _ = GFSAM.predict()
-        except:
-            pred_mask = old_pred_mask
+        pred_mask, _ = GFSAM.predict()
+
+        # try:
+        #     pred_mask, _ = GFSAM.predict()
+        # except:
+        #     pred_mask = old_pred_mask
         old_pred_mask = pred_mask.clone()
         #pred_mask, _ = GFSAM.predict()
         GFSAM.clear()
@@ -88,6 +90,7 @@ if __name__ == '__main__':
     parser.add_argument('--nshot', type=int, default=1)
     parser.add_argument('--img-size', type=int, default=1024)
     parser.add_argument('--use_original_imgsize', action='store_true')
+    parser.add_argument('--subtract_empty', action='store_true')
     parser.add_argument('--log-root', type=str, default='output/debug')
     parser.add_argument('--visualize', type=int, default=0)
     parser.add_argument('--viz_path', type=str, default=None)

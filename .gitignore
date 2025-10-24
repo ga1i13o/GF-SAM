@@ -23,6 +23,7 @@ wheels/
 pretrain
 # pytorch/python/numpy formats
 *.pth
+test
 *.pkl
 *.npy
 *.ts
