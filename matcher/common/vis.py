@@ -6,24 +6,32 @@ import numpy as np
 import torchvision.transforms as transforms
 
 from . import utils
-
+from os.path import join
 
 class Visualizer:
 
     @classmethod
-    def initialize(cls, visualize):
+    def initialize(cls, visualize, vis_path=None):
         cls.visualize = visualize
         if not visualize:
             return
 
+        # cls.colors = {'red': (255, 50, 50), 'blue': (102, 140, 255)}
         cls.colors = {'red': (255, 50, 50), 'blue': (102, 140, 255)}
         for key, value in cls.colors.items():
             cls.colors[key] = tuple([c / 255 for c in cls.colors[key]])
+        cls.colors['blue'] = (0.00, 0.90, 1.00)
+        cls.colors['red'] = (0.96, 0.28, 0.80)
+        cls.alpha = 0.6
 
         cls.mean_img = [0.485, 0.456, 0.406]
         cls.std_img = [0.229, 0.224, 0.225]
         cls.to_pil = transforms.ToPILImage()
-        cls.vis_path = './output/vis/'
+        if vis_path is None:
+            cls.vis_path = './output/vis/'
+        else:
+            cls.vis_path = vis_path
+
         if not os.path.exists(cls.vis_path): os.makedirs(cls.vis_path)
 
     @classmethod
@@ -65,13 +73,14 @@ class Visualizer:
         qry_pil = cls.to_pil(qry_img)
         qry_mask = cls.to_numpy(qry_mask, 'mask')
         pred_mask = cls.to_numpy(pred_mask, 'mask')
-        pred_masked_pil = Image.fromarray(cls.apply_mask(qry_img.astype(np.uint8), pred_mask.astype(np.uint8), pred_color))
-        qry_masked_pil = Image.fromarray(cls.apply_mask(qry_img.astype(np.uint8), qry_mask.astype(np.uint8), qry_color))
+        pred_masked_pil = Image.fromarray(cls.apply_mask(qry_img.astype(np.uint8), pred_mask.astype(np.uint8), pred_color, alpha=cls.alpha))
+        qry_masked_pil = Image.fromarray(cls.apply_mask(qry_img.astype(np.uint8), qry_mask.astype(np.uint8), qry_color, alpha=cls.alpha))
 
         merged_pil = cls.merge_image_pair(spt_masked_pils + [pred_masked_pil, qry_masked_pil])
 
         iou = iou.item() if iou else 0.0
-        merged_pil.save(cls.vis_path + '%d_%d_class-%d_iou-%.2f' % (batch_idx, sample_idx, cls_id, iou) + '.jpg')
+        f_name = join(cls.vis_path, f'{batch_idx}_{sample_idx}_class-{cls_id}_iou-{iou:.2f}.jpg')
+        merged_pil.save(f_name)
 
     @classmethod
     def merge_image_pair(cls, pil_imgs):

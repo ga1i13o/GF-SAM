@@ -11,9 +11,11 @@ from .lvis import DatasetLVIS
 from .deepglobe import DatasetDeepglobe
 from .isic import DatasetISIC
 from .isaid import DatasetISAID
+from .suim import DatasetSUIM
+from .lung import DatasetLung
+from .permis import DatasetPerMis
 
 class FSSDataset:
-
     @classmethod
     def initialize(cls, img_size, datapath, use_original_imgsize):
 
@@ -21,12 +23,15 @@ class FSSDataset:
             'coco': DatasetCOCO,
             'pascal': DatasetPASCAL,
             'fss': DatasetFSS,
+            'permis': DatasetPerMis,
             'paco_part': DatasetPACOPart,
             'pascal_part': DatasetPASCALPart,
             'lvis': DatasetLVIS,
             'deepglobe': DatasetDeepglobe,
             'isic': DatasetISIC,
-            'isaid': DatasetISAID
+            'isaid': DatasetISAID,
+            'suim': DatasetSUIM,
+            'lung': DatasetLung
         }
 
         cls.datapath = datapath
