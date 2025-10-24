@@ -19,7 +19,7 @@ class DatasetISAID(DatasetPASCAL):
         self.shot = shot
         self.use_original_imgsize = use_original_imgsize
 
-        datapath = os.path.join(datapath, 'remote_sensing/iSAID_patches')
+        datapath = os.path.join(datapath, 'iSAID')
 
         if self.split == 'trn':
             self.img_path = os.path.join(datapath, 'train/images')

@@ -18,6 +18,9 @@ from matcher.GFSAM import build_model
 import random
 random.seed(0)
 
+"""
+python main_eval.py      --benchmark suim     --nshot 1     --fold 0 --log-root "output/coco/fold0"
+"""
 
 def test(GFSAM, dataloader, args=None):
     r""" Test GFSAM """
@@ -26,7 +29,7 @@ def test(GFSAM, dataloader, args=None):
     # Follow HSNet
     utils.fix_randseed(0)
     average_meter = AverageMeter(dataloader.dataset)
-
+    runn_avg = 0
     for idx, batch in enumerate(dataloader):
 
         batch = utils.to_cuda(batch)
@@ -54,7 +57,9 @@ def test(GFSAM, dataloader, args=None):
         area_inter, area_union = Evaluator.classify_prediction(pred_mask.clone(), batch)
         average_meter.update(area_inter, area_union, batch['class_id'], loss=None)
         average_meter.write_process(idx, len(dataloader), epoch=-1, write_batch_idx=100)
-
+        runn_avg += (area_inter[1].item() / area_union[1].item())
+        if (idx + 1) % 100 == 0:
+            print(f'RUNN AVG: {runn_avg/(idx+1)}')
         # Visualize predictions
         if Visualizer.visualize:
             Visualizer.visualize_prediction_batch(batch['support_imgs'], batch['support_masks'],
@@ -76,8 +81,7 @@ if __name__ == '__main__':
 
     # Dataset parameters
     parser.add_argument('--datapath', type=str, default='datasets')
-    parser.add_argument('--benchmark', type=str, default='coco',
-                        choices=['fss', 'coco', 'pascal', 'lvis', 'paco_part', 'pascal_part', 'deepglobe', 'isic', 'isaid'])
+    parser.add_argument('--benchmark', type=str, default='coco')
     parser.add_argument('--bsz', type=int, default=1)
     parser.add_argument('--nworker', type=int, default=0)
     parser.add_argument('--fold', type=int, default=0)
@@ -86,6 +90,7 @@ if __name__ == '__main__':
     parser.add_argument('--use_original_imgsize', action='store_true')
     parser.add_argument('--log-root', type=str, default='output/debug')
     parser.add_argument('--visualize', type=int, default=0)
+    parser.add_argument('--viz_path', type=str, default=None)
 
     # DINOv2 and SAM parameters
     parser.add_argument('--dinov2-size', type=str, default="vit_large")
@@ -111,7 +116,7 @@ if __name__ == '__main__':
 
     # Helper classes (for testing) initialization
     Evaluator.initialize()
-    Visualizer.initialize(args.visualize)
+    Visualizer.initialize(args.visualize, args.viz_path)
 
     # Dataset initialization
     FSSDataset.initialize(img_size=args.img_size, datapath=args.datapath, use_original_imgsize=args.use_original_imgsize)
