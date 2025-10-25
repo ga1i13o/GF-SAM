@@ -42,7 +42,7 @@ class GFSAM:
             input_size = (input_size, input_size)
         self.input_size = input_size
 
-        self.dino_size = 840
+        self.dino_size = 592
         img_size = self.dino_size
         feat_size = img_size // self.encoder.patch_size
         self.encoder_img_size = img_size
@@ -413,7 +413,7 @@ class GFSAM:
         X_res = X_res.reshape(B, T, C, H, W)
 
         # Match your original behavior: L2-normalize along channel dim
-        X_res = F.normalize(X_res, p=2, dim=2, eps=eps)
+        # X_res = F.normalize(X_res, p=2, dim=2, eps=eps)
 
         return X_res
 
@@ -425,21 +425,25 @@ class GFSAM:
         ref_feats = self.encoder.forward_features(ref_imgs.to(self.device))["x_prenorm"][:, 5:]
         tar_feat = self.encoder.forward_features(tar_img.to(self.device))["x_prenorm"][:, 5:]
 
-        ref_feats = F.normalize(ref_feats, dim=-1, p=2) # normalize for cosine similarity
-        tar_feat = F.normalize(tar_feat, dim=-1, p=2)
+        ref_feats = F.normalize(ref_feats, dim=1, p=2) # normalize for cosine similarity
+        tar_feat = F.normalize(tar_feat, dim=1, p=2)
 
         if self.subtract_empty:
-            C, N = ref_feats.shape[-2:]
+            N = ref_feats.shape[1]
             H = int(np.sqrt(N))
             import einops
-            ref_square = einops.rearrange(ref_feats, '(b t) c (h w) -> b t c h w', h=H, t=1)
-            tar_square = einops.rearrange(tar_feat, '(b t) c (h w) -> b t c h w', h=H, t=1)
+            ref_square = einops.rearrange(ref_feats, '(b t) (h w) c -> b t c h w', h=H, t=1)
+            tar_square = einops.rearrange(tar_feat, '(b t) (h w) c -> b t c h w', h=H, t=1)
             
             ref_feats_db = self.remove_spatial_svd(ref_square)
             tar_feat_db = self.remove_spatial_svd(tar_square)
 
-            ref_feats = einops.rearrange(ref_feats_db, 'b t c h w -> (b t) c (h w)')
-            tar_feat = einops.rearrange(tar_feat_db, 'b t c h w -> (b t) c (h w)')
+            ref_feats = einops.rearrange(ref_feats_db, 'b t c h w -> (b t) (h w) c')
+            tar_feat = einops.rearrange(tar_feat_db, 'b t c h w -> (b t) (h w) c')
+
+            ref_feats = F.normalize(ref_feats, dim=1, p=2) # normalize for cosine similarity
+            tar_feat = F.normalize(tar_feat, dim=1, p=2)
+
         return ref_feats, tar_feat
     
     def clear(self):
