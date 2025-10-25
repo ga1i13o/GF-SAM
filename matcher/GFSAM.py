@@ -163,6 +163,7 @@ class GFSAM:
             tar_masks = torch.zeros((1, 1, 1024, 1024), device=self.device)
             pred_masks = tar_masks.squeeze(0)
             prob_masks = torch.zeros_like(pred_masks)
+            coord_xy, selected_points = None, None
         else:
             tar_masks = torch.cat(tar_masks_list, dim=0)
 
